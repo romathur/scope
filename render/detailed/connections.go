@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/weaveworks/scope/probe/endpoint"
 	"github.com/weaveworks/scope/render"
@@ -73,6 +75,8 @@ func newConnectionCounters() *connectionCounters {
 	return &connectionCounters{counted: map[string]struct{}{}, counts: map[connection]int{}}
 }
 
+var gcount int
+
 func (c *connectionCounters) add(dns report.DNSRecords, outgoing bool, localNode, remoteNode, localEndpoint, remoteEndpoint report.Node) {
 	// We identify connections by their source endpoint, pre-NAT, to
 	// ensure we only count them once.
@@ -101,8 +105,22 @@ func (c *connectionCounters) add(dns report.DNSRecords, outgoing bool, localNode
 		return
 	}
 
+	count := 1
+	if lv, _, ok := srcEndpoint.Latest.LookupEntry(report.ConnectionCount); ok {
+		if lvi, err := strconv.Atoi(lv); err == nil {
+			count = lvi
+		}
+	}
+
+	if gcount < 500 && strings.HasPrefix(srcEndpoint.ID, ";172.20.3.89;") {
+		gcount++
+		fmt.Printf("%s %s conn %s outgoing %t count %d prev %d\n", time.Now().Format(time.StampMilli), connectionID, conn, outgoing, count, c.counts[conn])
+		fmt.Printf("src %s %s\n", srcEndpoint.ID, srcEndpoint.Latest)
+		fmt.Printf("dst %s %s\n", dstEndpoint.ID, dstEndpoint.Latest)
+	}
+
 	c.counted[connectionID] = struct{}{}
-	c.counts[conn]++
+	c.counts[conn] += count
 }
 
 func internetAddr(dns report.DNSRecords, node report.Node, ep report.Node) (string, bool) {
